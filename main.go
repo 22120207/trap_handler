@@ -180,6 +180,16 @@ func main() {
 	threadId := os.Getenv("THREAD_ID")
 	isThread := os.Getenv("IS_THREAD")
 
+	// env variables for discord
+	criticalThread := "1383266646499790888"
+	nonCriticalThread := "1383018751154327582"
+
+	var DISCORD_MENTIONED_IDS = []string{
+		"618423557021761547",
+		"758578700081037312",
+		"1375668363258494996",
+	}
+
 	criticalBotToken := os.Getenv("CRITICAL_BOT_TOKEN")
 	//criticalChatId := os.Getenv("CRITICAL_CHAT_ID")
 	criticalThreadId := os.Getenv("CRITICAL_THREAD_ID")
@@ -218,6 +228,7 @@ func main() {
 
 	duration := 12 * 60 * time.Minute
 
+	// Send notify to non critical thread
 	if strings.Contains(alarmName, "VM") {
 		if strings.Contains(host, "firewall") {
 			// Do nothing
@@ -228,8 +239,16 @@ func main() {
 		message = strings.Replace(message, "[CONTENT]", content, -1)
 		message = strings.Replace(message, "[SIGN]", "⚠️", -1)
 		message = strings.Replace(message, "[CRITICAL_MESSAGE]", "", -1)
+
 		_, err := NotifyTelegram(botToken, chatId, threadId, isThread, message)
-		//logger.Print(out)
+		if err != nil {
+
+			logger.Print(err)
+			return
+		}
+
+		err = services.NotifyDiscord(message, "warning", nonCriticalThread, false, DISCORD_MENTIONED_IDS)
+
 		if err != nil {
 
 			logger.Print(err)
@@ -268,11 +287,16 @@ func main() {
 				logger.Print(err)
 			}
 		}
+
 		_, err = NotifyTelegram(criticalBotToken, "-1001682572909", criticalThreadId, "false", message)
-		//} else {
-		//	_, err = NotifyTelegram(criticalBotToken, criticalChatId, criticalThreadId, criticalIsThread, message)
-		//}
-		//logger.Print(out)
+		if err != nil {
+
+			logger.Print(err)
+			return
+		}
+
+		err = services.NotifyDiscord(message, "", criticalThread, true, DISCORD_MENTIONED_IDS)
+
 		if err != nil {
 			logger.Print(err)
 			return
@@ -289,17 +313,17 @@ func main() {
 }
 
 func NotifyTelegram(DefaultBotToken, DefaultChatID, ThreadID, isThread, messages string) (string, error) {
-	botToken := DefaultBotToken
-	chatID := DefaultChatID
-	baseCommand := `curl https://api.telegram.org/bot` + botToken + `/sendMessage
+	baseCommand := `curl https://api.telegram.org/bot` + DefaultBotToken + `/sendMessage
 	-X POST
 	-s --connect-timeout 10
-	-d chat_id=` + chatID + `
+	-d chat_id=` + DefaultChatID + `
 	-d parse_mode=Markdown
 	-d text="` + messages + `"`
+
 	if isThread == "true" {
 		baseCommand = baseCommand + ` -d message_thread_id=` + ThreadID
 	}
+
 	// TODO: execute curl command
 	out, err := RunCmd(baseCommand)
 	if err != nil {
@@ -322,25 +346,6 @@ func RunCmd(s ...string) ([]byte, error) {
 	str, err := exec.Command("bash", "-c", command).Output()
 	return str, err
 	//return exec.Command("bash", "-c", command).CombinedOutput()
-}
-
-func checkKeyRedis(client redis.Client, key string) (bool, error) {
-	val, err := client.Get(context.Background(), key).Result()
-	if err != nil {
-		return false, err
-	}
-	if val == "" {
-		return false, nil
-	}
-	return true, nil
-}
-
-func addKeyRedis(client redis.Client, key string, duration time.Duration) error {
-	err := client.Set(context.Background(), key, "1", duration).Err()
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func createTaskInWorkplace(whmcsClientId int, priority, description string) error {
@@ -395,4 +400,23 @@ func createTaskInWorkplace(whmcsClientId int, priority, description string) erro
 	err = json.Unmarshal(body, &result)
 	//log.Info("CreateTaskInWorkplace: Workplace API response: ", result)
 	return err
+}
+
+func checkKeyRedis(client redis.Client, key string) (bool, error) {
+	val, err := client.Get(context.Background(), key).Result()
+	if err != nil {
+		return false, err
+	}
+	if val == "" {
+		return false, nil
+	}
+	return true, nil
+}
+
+func addKeyRedis(client redis.Client, key string, duration time.Duration) error {
+	err := client.Set(context.Background(), key, "1", duration).Err()
+	if err != nil {
+		return err
+	}
+	return nil
 }
